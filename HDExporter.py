@@ -4,6 +4,7 @@ import bmesh
 import os
 import re
 import pathlib
+import math
 from bpy.types import Operator
 
 class HDExportSingle(Operator):
@@ -86,7 +87,7 @@ class HDExportSingle(Operator):
         
         #VB = [] # Vertex Block
         #for n in range(len(data_vertices)):
-        # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+        # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
         
         wdOutputBlock = 'HD_DATA_TXT 300\n\n'
         
@@ -113,40 +114,73 @@ class HDExportSingle(Operator):
                     #print(activeObj.data.vertices[n])
         wdOutputBlock += '\t}\n'  #Endl VertexBlock
         
-        # UV Block     <<<<<<<<<<<<<<<<<<<<<<<<<<<<
-        '''
+        # UV Block     <<<<<<<<<<<<<<<<<<<<<<<<<<<< ---------------------------------------------------------------------------------
         uvRAWList = []
         uvCorrectList = []
         uvRedirectIndex = []
+
+        tmpMissCheck = 0
+
+        # Collect RAW uv data
         for loop in objectList[0].data.uv_layers[0].data:
             uvRAWList.append(loop.uv)
             
+        # Calculate correct uv list 
         for n in range(len(uvRAWList)):
+            
+            #ONCE
             if len(uvCorrectList) == 0:
+                print('SimpleOne!')
                 uvCorrectList.append(uvRAWList[n])
                 uvRedirectIndex.append(n)
-                return
-            for i in range(len(uvCorrectList)):
-                if round(uvRAWList[n], 5) == round(uvCorrectList[i], 5):
-                    
+                continue ### Skip other 'for' body in first time, in this 'if' we add first correct index 
             
+            # Check if this uv coord exsist, then add Correct UV index in uvRedirectIndex
+            BoolXY = False
+            
+            for i in range(len(uvCorrectList)):
+                
+                if math.isclose(uvRAWList[n].x, uvCorrectList[i].x) and math.isclose(uvRAWList[n].y, uvCorrectList[i].y):
+                    BoolXY = True
+                    tmpMissCheck += 1                     
+                    uvRedirectIndex.append(i)
+           
+            if not BoolXY: 
+                uvCorrectList.append(uvRAWList[n])
+                uvRedirectIndex.append(len(uvCorrectList) - 1)
+
+
+
+        print('------------UV TOTAL------------')  
+        print('RawList:')  
+        print(len(uvRAWList))  
+        print('CorrectList:')  
+        print(len(uvCorrectList))
+        print('RedirIndexList:')
+        print(len(uvRedirectIndex))
+        print('Dublicates:')                 
+        print(tmpMissCheck)
         
-        '''
+        #for i in range(len(uvRedirectIndex)):
+            #print(uvRedirectIndex[i])
+            
+        print('------------UV TOTAL ENDL------------')  
+
+
+
+        iUVsCount = len(uvCorrectList) # Set correct num of uvs
         wdOutputBlock += f'\tuvs {iUVsCount}'
         wdOutputBlock += '\n\t{\n'
-        for loop in objectList[0].data.uv_layers[0].data:
-            tmpUV = loop.uv
-            tmpU = round(tmpUV.x, 6)
-            tmpV = round(tmpUV.y, 6)
+        for ax in range(len(uvCorrectList)):
+            tmpU = round(uvCorrectList[ax].x, 7)
+            tmpV = round(uvCorrectList[ax].y, 7)       
             wdOutputBlock += f'\t\tuv {tmpU} {tmpV};\n'      
         wdOutputBlock += '\t}\n'  #Endl UV Block
         
-        # GROUPS       <<<<<<<<<<<<<<<<<<<<<<<<<<<< Materials, polys and Smooth Groups
+        # GROUPS (FACES)      <<<<<<<<<<<<<<<<<<<<<<<<<<<< Materials, polys and Smooth Groups --------------------------------------------
         
         wdOutputBlock += f'\tgroups {iMatGroups}'
         wdOutputBlock += '\n\t{\n'
-        
-        #----------
         
         for n in range(len(data_materials)):
             tmpMtlName = data_materials[n].name         # Get name of material for write 'wdOutputBlock +='            
@@ -178,6 +212,7 @@ class HDExportSingle(Operator):
                 
                 # /// Face Vertex Count Data Collect <-            
                 faceNGon = len(data_polygons[CurrentPolyIndex].vertices)
+                
                 # /// Face Vertex Index Data Collect <-
                 for bx in range(faceNGon):
                     if bx == 0:
@@ -185,20 +220,21 @@ class HDExportSingle(Operator):
                     faceVertex += f'{data_polygons[CurrentPolyIndex].vertices[bx]}'
                     if bx != faceNGon-1:
                         faceVertex += ' '
+                        
                 # /// Face UV Data Collect <-
                 faceUVraw = []
                 GetUVindex = data_polygons[CurrentPolyIndex].loop_start
                 #for bx in range(len(data_polygons[CurrentPolyIndex])):                
-                for gx in range(data_polygons[CurrentPolyIndex].loop_total):
+                for gx in range(data_polygons[CurrentPolyIndex].loop_total):   # Here we get global loops index for current face
                     faceUVraw.append(GetUVindex)
-                    print(GetUVindex)
+                    #print(GetUVindex)
                     #print(data_uv[GetUVindex])    
                     GetUVindex += 1
                                     
                 for i in range(len(faceUVraw)):
                     if i == 0:
                         faceUV = '' #Remove???
-                    faceUV += f'{faceUVraw[i]}'
+                    faceUV += f'{uvRedirectIndex[faceUVraw[i]]}' #<-  uvRedirectIndex   uvCorrectList
                     if i != len(faceUVraw)-1:
                         faceUV += ' '
                  

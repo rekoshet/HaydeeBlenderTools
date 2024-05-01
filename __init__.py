@@ -44,6 +44,11 @@ class HDBProps(PropertyGroup):
         name = 'Local position',
         default = False
     )
+    bOptimizeWedges : BoolProperty(
+        name = 'Optimize wedges',
+        default = True
+    )
+
 
 # Export single mesh -------------------- //
 
@@ -101,6 +106,9 @@ class OBJECT_PT_HDBEXPORTER(Panel):
         col = layout.column()
         #col.prop(props, 'bSelectedOnly')
         col.prop(props, 'bLocalPosition')
+        col.prop(props, 'bOptimizeWedges')
+        
+        
 
 #-------------------------------------------------------
 #-------------------------------------------------------
