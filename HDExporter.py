@@ -7,34 +7,62 @@ import pathlib
 import math
 from bpy.types import Operator
 
+
+from .HDUtils import * # Import some def :
+
+'''
+Classes::
+    HDExportSingle
+    HDExportMotion
+    HDExportSkeleton
+    HDExportPose
+'''
+
 class HDExportSingle(Operator):
     bl_idname = 'object.exportsingle'
     bl_label  = 'Single dmesh export'
+
+    fUnitMultiplier = 32.0
     
-    def execute(self, context):                        
-        # Collect and check meshes for export -------------------------------------------------------
-        
+    def execute(self, context):
+
+        # Collect and check selected meshes for export
         objectList = []                                 # Null objectList
         for ob in context.scene.objects:                # Get selected "MESH" objects
             if ob.select_get() and ob.type == 'MESH':   #
                 objectList.append(ob)                   #
         #print(objectList)                              # Debug print
-        
+
+        '''
+        Later here we start <for> for batch export, and in objectList[0] we need change '0' to 'i'
+        '''
         
         pName = objectList[0].name                      # Write Active object name
         pMesh = objectList[0].to_mesh()                 # Write object to pMesh
         pObj  = objectList[0]
-        print(f'Active object to export: {pName}')      # DebugP rint
+        print(f'Start object to export: {pName}')      # DebugP rint
         
             
         data_vertices = pMesh.vertices
         data_materials = pMesh.materials
         data_polygons = pMesh.polygons
-        #data_uv = pMesh.uv_layers[0]        
+        #data_uv = pMesh.uv_layers[0]
+
+        # Check skin data  !!!!!!!!!!!!!!!!!!!! Need Refactoring !!!!!!!!!!!!!!!!!!!!
+        if pObj.parent != None:
+            if pObj.parent.type == 'ARMATURE':
+                bSkinData = True
+            else:
+                bSkinData = False
+        else:
+            bSkinData = False
+
+
+        # Calculate Smooth Groups (SG)
         data_SG = pMesh.calc_smooth_groups(use_bitflags=False)  # Calculate smooth groups, 
-                                                               # return list with 2 list data 
-                                                               # [0] = SG list per face index
-                                                               # [1] = total count smooth groups
+                                                                # return list with 2 list data
+                                                                # [0] = SG list per face index
+                                                                # [1] = total count smooth groups
                                                                                                                               
         data_uv = []
 
@@ -160,29 +188,23 @@ class HDExportSingle(Operator):
         print(len(uvRedirectIndex))
         print('Dublicates:')                 
         print(tmpMissCheck)
-        
-        #for i in range(len(uvRedirectIndex)):
-            #print(uvRedirectIndex[i])
-            
         print('------------UV TOTAL ENDL------------')  
-
-
 
         iUVsCount = len(uvCorrectList) # Set correct num of uvs
         wdOutputBlock += f'\tuvs {iUVsCount}'
         wdOutputBlock += '\n\t{\n'
         for ax in range(len(uvCorrectList)):
-            tmpU = round(uvCorrectList[ax].x, 7)
-            tmpV = round(uvCorrectList[ax].y, 7)       
+            tmpU = round(uvCorrectList[ax].x, 8)
+            tmpV = round(uvCorrectList[ax].y, 8)       
             wdOutputBlock += f'\t\tuv {tmpU} {tmpV};\n'      
         wdOutputBlock += '\t}\n'  #Endl UV Block
         
-        # GROUPS (FACES)      <<<<<<<<<<<<<<<<<<<<<<<<<<<< Materials, polys and Smooth Groups --------------------------------------------
+        ### GROUPS (FACES)      <<<<<<<<<<<<<<<<<<<<<<<<<<<< Materials, polys and Smooth Groups ----------------------------
         
         wdOutputBlock += f'\tgroups {iMatGroups}'
         wdOutputBlock += '\n\t{\n'
         
-        for n in range(len(data_materials)):
+        for n in range(len(data_materials)):            # Start <for> GROUPS_MATERIAL <<<
             tmpMtlName = data_materials[n].name         # Get name of material for write 'wdOutputBlock +='            
             tmpMtlIndex = n                             # Remove maybe?
             tmpList = polyCollectionTotal[tmpMtlIndex]  # Take list of polys by material index // Maybe 'tmpMtlIndex' dont need
@@ -203,7 +225,7 @@ class HDExportSingle(Operator):
                           
             wdOutputBlock += f'\t\tgroup {tmpMtlName} {iPolyCount}'  # Start Material Group
             wdOutputBlock += '\n\t\t{\n'            
-            for ax in range(len(tmpList)): # for Face list in material group
+            for ax in range(len(tmpList)):              # Start <for> FACE_LIST in GROUP_MATERIAL <<<
                 
                 wdOutputBlock += '\t\t\tface\n' # Start face data
                 wdOutputBlock += '\t\t\t{\n'
@@ -260,7 +282,43 @@ class HDExportSingle(Operator):
             #-----------------------------------------------------------------
             
         wdOutputBlock += '\t}\n' # End groups
-        wdOutputBlock += '}\n'   # End mesh
+
+        ### JOINTS (Bones)      <<<<<<<<<<<<<<<<<<<<<<<<<<<< Joints --------------------------------------------------------
+        if bSkinData:
+            print('We have skin data')
+            pBones = pObj.parent.data.bones
+
+            wdOutputBlock += f'\tjoints {len(pBones)}'
+            wdOutputBlock += '\n\t{'
+
+            for i in range(len(pBones)):
+                wdOutputBlock += f'\n\t\tjoint {pBones[i].name}'
+                wdOutputBlock += '\n\t\t{\n'
+                tmpVector = f_ConvertPosition(pBones[i].head_local)
+                wdOutputBlock += f'\t\t\torigin {tmpVector[0]} {tmpVector[1]} {tmpVector[2]};'
+                wdOutputBlock += '\n'
+                tmpQuaternion = f_ConverQuaternion(pBones[i].matrix_local.to_3x3().to_quaternion())
+                wdOutputBlock += f'\t\t\taxis {tmpQuaternion[0]} {tmpQuaternion[1]} {tmpQuaternion[2]} {tmpQuaternion[3]};'
+                wdOutputBlock += '\n\t\t}'
+
+            # End
+            wdOutputBlock += '\n\t}\n'
+
+        ### VERTEX_WEIGHTS      <<<<<<<<<<<<<<<<<<<<<<<<<<<< Vertex, Joint, Value ------------------------------------------
+
+        weightsList = f_CalculateWeights(pObj, pBones)
+
+        wdOutputBlock += f'\tweights {len(weightsList)}'
+        wdOutputBlock += '\n\t{'
+
+        for i in range(len(weightsList)):
+            wValue = weightsList[i]
+            wdOutputBlock += f'\n\t\tweight {wValue[0]} {wValue[1]} {wValue[2]};' #weightsList[i].[0] weightsList[i].[1] weightsList[i].[2] weightsList[i[0]]
+        wdOutputBlock += '\n\t}'
+
+
+
+        wdOutputBlock += '\n}'   # End mesh
                    
         #bpy.path.abspath
         #path_to_file = pathlib.Path.home() / 'tmp' / 'penis.txt'
@@ -271,10 +329,10 @@ class HDExportSingle(Operator):
         #tmpBlendPath = pathlib.Path(bpy.data.filepath)                    # Get blender file path
         #path_to_file = str(tmpBlendPath.parent) + '/' + pName + '.dmesh'  # Calculate savePath file to blend file folder
         path_to_file = 'P:/Haydee Interactive/0-dMeshes/BlendTest' + '/' + pName + '.dmesh'
-        
-        
-        #path_to_file = 'F:/ActiveProjects(Code)/HDExporter_Blender/HDBExporter/penis.dmesh'
-        
+
+        f_SaveDataToFile(path_to_file, wdOutputBlock)
+
+        '''
         with open(path_to_file, 'w') as pFile:
             #pFile.write('HD_DATA_TXT 300\n\n')
             HDData = wdOutputBlock
@@ -282,30 +340,8 @@ class HDExportSingle(Operator):
             pFile.write(HDData)
             #HDData = str(len(data_vertices))
             #pFile.write(HDData)
-                
-        # Export Skin data
-        
-        # Write in file
-               
-        
-        # .dmesh export::Endl ----------------------------------------------------------
-        #for ob in objectList:            
-        #    if ob.type == 'MESH':
-        #        print('Sucsess!')
-        #print(objectList[0].items())
-        #print(objectList[0].ob.type == "MESH")
-        #print(objectList[0].values())
-        
-        
-        #if objectList[0].data == "MESH":
-            #print('HellowPenis!')
-        
-        #if objectList.length == 1:
-            #print('HellowPenis!')
-            
-            #if objectList.type == "MESH":
-                #print('HellowVagina!')
-                
+        '''
+
         return {'FINISHED'}
     
 #-------Add later export bones staff------
@@ -333,5 +369,6 @@ class HDExportPose(Operator):
     bl_label  = 'Pose export'
     
     def execute(self, context):
+        fTest()
         bpy.ops.object.metaball_add(type='PLANE', enter_editmode=False, align='WORLD', location=(0, 0, 0), scale=(1, 1, 1))
         return {'FINISHED'}
