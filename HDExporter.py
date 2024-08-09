@@ -297,7 +297,7 @@ class HDExportSingle(Operator):
                 tmpVector = f_ConvertPosition(pBones[i].head_local)
                 wdOutputBlock += f'\t\t\torigin {tmpVector[0]} {tmpVector[1]} {tmpVector[2]};'
                 wdOutputBlock += '\n'
-                tmpQuaternion = f_ConverQuaternion(pBones[i].matrix_local.to_3x3().to_quaternion())
+                tmpQuaternion = f_ConverQuaternion(pBones[i].matrix_local.to_quaternion())  # matrix_local.to_quaternion()
                 wdOutputBlock += f'\t\t\taxis {tmpQuaternion[0]} {tmpQuaternion[1]} {tmpQuaternion[2]} {tmpQuaternion[3]};'
                 wdOutputBlock += '\n\t\t}'
 
@@ -306,15 +306,15 @@ class HDExportSingle(Operator):
 
         ### VERTEX_WEIGHTS      <<<<<<<<<<<<<<<<<<<<<<<<<<<< Vertex, Joint, Value ------------------------------------------
 
-        weightsList = f_CalculateWeights(pObj, pBones)
+            weightsList = f_CalculateWeights(pObj, pBones)
 
-        wdOutputBlock += f'\tweights {len(weightsList)}'
-        wdOutputBlock += '\n\t{'
+            wdOutputBlock += f'\tweights {len(weightsList)}'
+            wdOutputBlock += '\n\t{'
 
-        for i in range(len(weightsList)):
-            wValue = weightsList[i]
-            wdOutputBlock += f'\n\t\tweight {wValue[0]} {wValue[1]} {wValue[2]};' #weightsList[i].[0] weightsList[i].[1] weightsList[i].[2] weightsList[i[0]]
-        wdOutputBlock += '\n\t}'
+            for i in range(len(weightsList)):
+                wValue = weightsList[i]
+                wdOutputBlock += f'\n\t\tweight {wValue[0]} {wValue[1]} {wValue[2]};' #weightsList[i].[0] weightsList[i].[1] weightsList[i].[2] weightsList[i[0]]
+            wdOutputBlock += '\n\t}'
 
 
 
@@ -360,7 +360,70 @@ class HDExportSkeleton(Operator):
     bl_label  = 'Skeleton export'
     
     def execute(self, context):
-        bpy.ops.object.metaball_add(type='CAPSULE', enter_editmode=False, align='WORLD', location=(0, 0, 0), scale=(1, 1, 1))
+        #bpy.ops.object.metaball_add(type='CAPSULE', enter_editmode=False, align='WORLD', location=(0, 0, 0), scale=(1, 1, 1))
+
+        # PREPARE BLOCK <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+        # Collect and check selected meshes for export
+
+
+        objectList = []                                 # Null objectList
+        for ob in context.scene.objects:                # Get selected "MESH" objects
+            if ob.select_get() and ob.type == 'MESH':   #
+                objectList.append(ob)                   #
+        #print(objectList)                              # Debug print
+
+        # TODO Checks if(Armature)
+
+        pName = objectList[0].name
+        pObj = objectList[0]
+        pBones = pObj.parent.data.bones
+
+        path_to_file = 'P:/Haydee Interactive/0-dMeshes/BlendTest' + '/' + pName + '.dskel'
+
+        # SKELETON DATA BLOCK <<<<<<<<<<<<<<<<<<<<<<<<<<<<
+        ExportData = 'HD_DATA_TXT 300\n\n' # Start file
+        ExportData += f'skeleton {len(pBones)}'
+        ExportData += '\n{'
+        # ---
+
+        for i in range(len(pBones)):
+
+            ExportData += f'\n\tbone {pBones[i].name}'
+            ExportData += '\n\t{'
+
+            fSideMetrics = round(pBones[i].head_radius, 4) * 32.0
+            fBoneLength = round(pBones[i].length, 4) * 32.0
+
+            ExportData += f'\n\t\twidth {fSideMetrics};'
+            ExportData += f'\n\t\theight {fSideMetrics};'
+            ExportData += f'\n\t\tlength {fBoneLength};'
+
+            if(pBones[i].parent):
+                ExportData += f'\n\t\tparent {pBones[i].parent.name};'
+
+            tmpVector = f_ConvertPosition(pBones[i].head_local)
+            ExportData += f'\n\t\torigin {tmpVector[0]} {tmpVector[1]} {tmpVector[2]};'
+
+            #matrix_local.to_quaternion()
+            tmpQuaternion = f_ConverQuaternion(pBones[i].matrix_local.to_quaternion())
+            ExportData += f'\n\t\taxis {tmpQuaternion[0]} {tmpQuaternion[1]} {tmpQuaternion[2]} {tmpQuaternion[3]};'
+
+
+            '''
+            width 3.0;
+		    height 3.0;
+		    length 24.3013;
+		    parent SK_Root;
+		    origin 2.39171e-07 0.0 0.0;
+		    axis 0.0 0.0 0.707107 -0.707107;
+            '''
+
+            ExportData += '\n\t}'
+
+        # ---
+        ExportData += '\n}'  # End file
+
+        f_SaveDataToFile(path_to_file, ExportData)
         return {'FINISHED'}
     
     
